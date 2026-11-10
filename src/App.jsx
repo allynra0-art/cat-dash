@@ -141,6 +141,10 @@ const NEXT_TOUR_FLOW = {
 const LANE_HEIGHT = 64;
 const LANE_GAP = 6;
 const LANES_TOP = 200;
+const MOBILE_LANE_HEIGHT = 50;
+const MOBILE_LANE_GAP = 5;
+const MOBILE_LANES_TOP = 92;
+const MOBILE_QUERY = '(max-width: 650px)';
 
 let questionKeySeed = 0;
 const blank = () => ({
@@ -152,6 +156,40 @@ const blank = () => ({
   correct_text: '',
 });
 const msg = (e) => e?.message || String(e);
+
+// ===== VALIDASI EMAIL: hanya email penyedia resmi / sekolah yang boleh masuk =====
+const ALLOW_GUEST = false; // true = tampilkan lagi tombol "Main sebagai Tamu"
+const ALLOWED_EMAIL_DOMAINS = [
+  'gmail.com',
+  'googlemail.com',
+  'yahoo.com',
+  'yahoo.co.id',
+  'ymail.com',
+  'outlook.com',
+  'hotmail.com',
+  'live.com',
+  'msn.com',
+  'icloud.com',
+  'me.com',
+  'proton.me',
+  'protonmail.com',
+];
+const ALLOWED_EMAIL_SUFFIXES = ['.sch.id', '.ac.id', '.edu'];
+const EMAIL_REGEX =
+  /^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?@([a-z0-9-]+(?:\.[a-z0-9-]+)+)$/;
+
+function validateEmail(email) {
+  const m = EMAIL_REGEX.exec(email);
+  if (!m || email.includes('..'))
+    return 'Format email tidak valid. Contoh: namamu@gmail.com';
+  const domain = m[1];
+  const ok =
+    ALLOWED_EMAIL_DOMAINS.includes(domain) ||
+    ALLOWED_EMAIL_SUFFIXES.some((suffix) => domain.endsWith(suffix));
+  if (!ok)
+    return 'Gunakan email dari Gmail, Yahoo, Outlook, iCloud, atau email sekolah/kampus (contoh: namamu@gmail.com).';
+  return '';
+}
 
 // ===== KUIS SIMULASI BAWAAN (otomatis dibuat untuk user yang belum punya kuis) =====
 const SAMPLE_QUIZ_TITLE = '🎮 Simulasi Kuis: Pengetahuan Umum';
@@ -278,6 +316,22 @@ export default function App() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // Deteksi layar HP (breakpoint sama dengan CSS) supaya tinggi arena balapan pas
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(MOBILE_QUERY).matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_QUERY);
+    const onChange = (e) => setIsMobile(e.matches);
+    setIsMobile(mq.matches);
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else mq.addListener(onChange);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener('change', onChange);
+      else mq.removeListener(onChange);
+    };
+  }, []);
+
   // TUTORIAL STATE
   const [showTutorial, setShowTutorial] = useState(false);
   const [tutorialFlow, setTutorialFlow] = useState('home');
@@ -401,8 +455,11 @@ export default function App() {
       : 'Kamu berhasil sampai garis finish! Terus berlatih ya! 💪';
 
   // Tinggi area balapan menyesuaikan jumlah lintasan supaya tidak ada kucing yang terpotong
-  const sceneryMinHeight =
-    LANES_TOP + lanePlayers.length * (LANE_HEIGHT + LANE_GAP) + 16;
+  const sceneryMinHeight = isMobile
+    ? MOBILE_LANES_TOP +
+      lanePlayers.length * (MOBILE_LANE_HEIGHT + MOBILE_LANE_GAP) +
+      12
+    : LANES_TOP + lanePlayers.length * (LANE_HEIGHT + LANE_GAP) + 16;
 
   const fx = (type) => sound(type, soundOn);
   const rpc = async (fn, args) => {
@@ -848,10 +905,15 @@ export default function App() {
     e.preventDefault();
     if (!emailInput || !passwordInput)
       return setError('Email dan Password wajib diisi.');
+    const email = emailInput.trim().toLowerCase();
+    const emailErr = validateEmail(email);
+    if (emailErr) return setError(emailErr);
+    if (authMode === 'register' && passwordInput.length < 8)
+      return setError('Password minimal 8 karakter.');
     return run(async () => {
       if (authMode === 'login') {
         const { error } = await supabase.auth.signInWithPassword({
-          email: emailInput,
+          email,
           password: passwordInput,
         });
         if (error) {
@@ -861,9 +923,9 @@ export default function App() {
         }
       } else {
         const { data, error } = await supabase.auth.signUp({
-          email: emailInput,
+          email,
           password: passwordInput,
-          options: { data: { name: emailInput.split('@')[0] } },
+          options: { data: { name: email.split('@')[0] } },
         });
         if (error) throw error;
         if (data.session === null) {
@@ -1557,9 +1619,14 @@ export default function App() {
                   type="email"
                   value={emailInput}
                   onChange={(e) => setEmailInput(e.target.value)}
-                  placeholder="kamu@email.com"
+                  placeholder="namamu@gmail.com"
+                  autoComplete="email"
                   required
                 />
+                <small style={{ display: 'block', marginTop: '6px' }}>
+                  Gunakan email aktif (Gmail, Yahoo, Outlook, iCloud, atau
+                  email sekolah/kampus).
+                </small>
               </label>
               <label>
                 Password
@@ -1596,14 +1663,20 @@ export default function App() {
               </button>
             </div>
           </div>
-          <div
-            className="actions"
-            style={{ justifyContent: 'center', marginTop: '20px' }}
-          >
-            <button className="secondary" onClick={handleGuest} disabled={busy}>
-              🎮 MAIN SEBAGAI TAMU
-            </button>
-          </div>
+          {ALLOW_GUEST && (
+            <div
+              className="actions"
+              style={{ justifyContent: 'center', marginTop: '20px' }}
+            >
+              <button
+                className="secondary"
+                onClick={handleGuest}
+                disabled={busy}
+              >
+                🎮 MAIN SEBAGAI TAMU
+              </button>
+            </div>
+          )}
         </section>
       )}
 
@@ -2264,7 +2337,10 @@ export default function App() {
                       className={`arcadeKey runKey ${
                         myEnergy <= 0 || !raceReady ? 'disabledKey' : ''
                       }`}
-                      onClick={() => pressRunKey()}
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        pressRunKey();
+                      }}
                       style={{ minWidth: '120px' }}
                     >
                       <b>D</b>
@@ -2285,6 +2361,11 @@ export default function App() {
                         moveRef.current.sprinting = false;
                         setSprinting(false);
                       }}
+                      onPointerCancel={() => {
+                        moveRef.current.sprinting = false;
+                        setSprinting(false);
+                      }}
+                      onContextMenu={(e) => e.preventDefault()}
                     >
                       <b>⚡</b>
                       <small>
