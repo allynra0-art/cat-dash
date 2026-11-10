@@ -1007,3 +1007,152 @@ footer { text-align: center; color: var(--text-muted); font-size: 12px; margin: 
   .youTag { font-size: 10px; }
   .rivalName { max-width: 70px; }
 }
+
+/* =====================================================
+   PATCH v3 - TEMPELKAN DI PALING BAWAH App.css
+   (setelah App.patch.css yang sebelumnya)
+   ===================================================== */
+
+/* Elemen tutorial baru harus berada di atas overlay gelap */
+#tour-btn-hapus-soal,
+#tour-btn-tambah-soal {
+  position: relative;
+  z-index: 9999;
+}
+
+/* ---------- LAYAR SELAMAT (sebelum podium) ---------- */
+.congrats-modal {
+  max-width: 520px;
+  margin: 10px auto 20px;
+  position: relative;
+  overflow: hidden;
+}
+.congrats-confetti {
+  font-size: 30px;
+  letter-spacing: 8px;
+  animation: confettiDrop 1.2s ease-out both;
+}
+.congrats-title {
+  font-size: clamp(34px, 8vw, 52px);
+  letter-spacing: 4px;
+  text-shadow: 3px 4px 0 var(--pink-soft);
+  animation: countdownPop 0.7s ease-out both;
+}
+.congrats-stats .between {
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--panel-border);
+}
+.congrats-stats .between:last-child { border-bottom: none; }
+@keyframes confettiDrop {
+  0%   { transform: translateY(-30px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+/* Tombol hapus soal selalu bisa diklik */
+.questionEditor .ghost.danger { cursor: pointer; }
+
+/* =====================================================
+   PATCH v4 - TEMPELKAN DI PALING BAWAH App.css
+   (setelah App.patch.css dan App.patch2.css)
+   ===================================================== */
+
+/* Checkbox "jangan tampilkan lagi" (CSS global memaksa semua input lebar 100%) */
+.checkRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 18px 0 0;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+  text-align: left;
+}
+.checkRow input[type='checkbox'] {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  padding: 0;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: var(--pink-shadow);
+  cursor: pointer;
+}
+.checkRow small { color: var(--text-muted); font-weight: 400; }
+
+/* Pesan selamat datang */
+.welcome-modal { text-align: center; }
+.welcome-modal h2 { margin: 8px 0 10px; }
+.welcome-desc {
+  margin: 0 0 18px;
+  line-height: 1.6;
+  color: var(--text-dark);
+}
+.welcomeCats {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.welcomeCats .cat { animation: float 2.2s ease-in-out infinite alternate; }
+.welcomeCats .cat:nth-child(2) { animation-delay: 0.3s; }
+.welcomeCats .cat:nth-child(3) { animation-delay: 0.6s; }
+.welcomeCats .cat:nth-child(4) { animation-delay: 0.9s; }
+
+/* =====================================================
+   PATCH v5 - TEMPELKAN DI PALING BAWAH App.css
+   (setelah patch 1, 2, dan 3)
+   Merapikan header soal & tombol HAPUS
+   ===================================================== */
+
+/* Header tiap soal: "SOAL 1" di kiri, dropdown + HAPUS sebaris di kanan */
+.questionEditor > .between {
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+  border-bottom: 2px dashed var(--panel-border);
+}
+.questionEditor > .between > b {
+  color: var(--pink-shadow);
+  font-size: 18px;
+  letter-spacing: 1px;
+}
+.questionEditor > .between > div {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* Dropdown tipe soal: tidak lagi selebar penuh */
+.questionEditor > .between select {
+  width: auto;
+  min-width: 190px;
+  margin: 0 !important;
+  padding: 9px 12px !important;
+  font-size: 14px;
+  border-radius: 12px !important;
+}
+
+/* Tombol HAPUS: kecil, merah lembut, sejajar dengan dropdown */
+.questionEditor > .between .ghost.danger {
+  padding: 9px 14px;
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--pink-shadow);
+  background: linear-gradient(180deg, #fff5f3, #ffd9d4);
+  box-shadow: 0 3px 0 var(--pink-soft);
+}
+.questionEditor > .between .ghost.danger:hover:not(:disabled) {
+  background: linear-gradient(180deg, #ffe9e6, var(--pink-soft));
+  box-shadow: 0 5px 0 var(--pink-shadow);
+}
+
+/* Bulatan jawaban benar: pindah ke KIRI huruf supaya jelas milik pilihan yang mana */
+.optionEdit input[type='radio'] { order: -1; }
+
+@media (max-width: 560px) {
+  .questionEditor > .between > div { width: 100%; justify-content: space-between; }
+  .questionEditor > .between select { flex: 1; min-width: 0; }
+}

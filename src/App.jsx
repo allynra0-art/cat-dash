@@ -56,9 +56,14 @@ const TOUR_FLOWS = {
       desc: 'Ketik soal di sini. Form jawaban di bawahnya otomatis menyesuaikan.',
     },
     {
-      id: 'tour-btn-ai',
-      title: 'Fitur AI ✨',
-      desc: 'Atau biarkan AI yang membuatkan soal berdasarkan topik secara instan.',
+      id: 'tour-btn-hapus-soal',
+      title: 'Hapus Soal 🗑',
+      desc: 'Salah buat soal? Klik tombol ini untuk menghapusnya.',
+    },
+    {
+      id: 'tour-btn-tambah-soal',
+      title: 'Tambah Soal ➕',
+      desc: 'Klik untuk menambah soal baru (maksimal 50 soal).',
     },
     {
       id: 'tour-btn-simpan',
@@ -75,7 +80,7 @@ const TOUR_FLOWS = {
     {
       id: 'tour-pilih-kuis',
       title: 'Pilih Kuis',
-      desc: 'Pilih kuis yang sudah kamu buat sebelumnya.',
+      desc: 'Pilih kuis yang mau dimainkan. Sudah ada "Simulasi Kuis" yang siap dipakai untuk mencoba.',
     },
     {
       id: 'tour-input-bot',
@@ -137,7 +142,9 @@ const LANE_HEIGHT = 64;
 const LANE_GAP = 6;
 const LANES_TOP = 200;
 
+let questionKeySeed = 0;
 const blank = () => ({
+  _key: ++questionKeySeed, // key stabil supaya hapus soal tidak mengacak form
   prompt: '',
   type: 'pg',
   options: ['', '', '', ''],
@@ -145,6 +152,50 @@ const blank = () => ({
   correct_text: '',
 });
 const msg = (e) => e?.message || String(e);
+
+// ===== KUIS SIMULASI BAWAAN (otomatis dibuat untuk user yang belum punya kuis) =====
+const SAMPLE_QUIZ_TITLE = '🎮 Simulasi Kuis: Pengetahuan Umum';
+const SAMPLE_QUESTIONS = [
+  { type: 'pg', prompt: "Berapa hasil 7 + 8?", options: ["13", "14", "15", "16"], correct_index: 2 },
+  { type: 'pg', prompt: "Planet yang paling dekat dengan Matahari adalah...", options: ["Merkurius", "Venus", "Bumi", "Mars"], correct_index: 0 },
+  { type: 'pg', prompt: "Campuran warna merah dan kuning menghasilkan warna...", options: ["Hijau", "Oranye", "Ungu", "Biru"], correct_index: 1 },
+  { type: 'pg', prompt: "Hewan berikut yang berkembang biak dengan cara bertelur adalah...", options: ["Kucing", "Ayam", "Sapi", "Kambing"], correct_index: 1 },
+  { type: 'pg', prompt: "Berapa jumlah hari dalam seminggu?", options: ["5", "6", "7", "8"], correct_index: 2 },
+  { type: 'pg', prompt: "Ibu kota negara Prancis adalah...", options: ["London", "Paris", "Roma", "Berlin"], correct_index: 1 },
+  { type: 'pg', prompt: "Alat yang dipakai untuk melihat bintang dan benda langit yang jauh adalah...", options: ["Mikroskop", "Teleskop", "Periskop", "Termometer"], correct_index: 1 },
+  { type: 'pg', prompt: "Benda langit yang tampak menerangi bumi pada malam hari adalah...", options: ["Matahari", "Komet", "Bulan", "Meteor"], correct_index: 2 },
+  { type: 'pg', prompt: "Berapa hasil 9 x 6?", options: ["52", "54", "56", "48"], correct_index: 1 },
+  { type: 'pg', prompt: "Hewan yang bernapas dengan insang adalah...", options: ["Ikan", "Kelinci", "Burung", "Kambing"], correct_index: 0 },
+  { type: 'pg', prompt: "Matahari terbit dari arah...", options: ["Barat", "Timur", "Utara", "Selatan"], correct_index: 1 },
+  { type: 'pg', prompt: "Hewan terbesar di dunia adalah...", options: ["Gajah", "Jerapah", "Paus biru", "Hiu"], correct_index: 2 },
+  { type: 'pg', prompt: "Air membeku pada suhu...", options: ["100 derajat Celsius", "0 derajat Celsius", "50 derajat Celsius", "-10 derajat Celsius"], correct_index: 1 },
+  { type: 'pg', prompt: "Berapa hasil 100 - 45?", options: ["45", "65", "55", "50"], correct_index: 2 },
+  { type: 'pg', prompt: "Berapa jumlah kaki pada seekor laba-laba?", options: ["6", "8", "10", "4"], correct_index: 1 },
+];
+
+async function seedSampleQuiz(ownerId) {
+  const { data, error } = await supabase
+    .from('quizzes')
+    .insert({ owner_id: ownerId, title: SAMPLE_QUIZ_TITLE })
+    .select('id')
+    .single();
+  if (error) throw error;
+  const { error: qe } = await supabase.from('quiz_questions').insert(
+    SAMPLE_QUESTIONS.map((q, i) => ({
+      quiz_id: data.id,
+      position: i,
+      prompt: q.prompt,
+      type: q.type,
+      options: q.options,
+      correct_index: q.correct_index,
+    }))
+  );
+  if (qe) {
+    await supabase.from('quizzes').delete().eq('id', data.id);
+    throw qe;
+  }
+  return data.id;
+}
 
 const formatTime = (ms) => {
   const total = Math.max(0, Math.floor(Number(ms) || 0));
@@ -259,11 +310,6 @@ export default function App() {
   const [selectedQuiz, setSelectedQuiz] = useState('');
   const [joinCode, setJoinCode] = useState('');
 
-  const [aiTopic, setAiTopic] = useState('');
-  const [aiLevel, setAiLevel] = useState('Sedang');
-  const [aiCount, setAiCount] = useState(5);
-  const [aiLoading, setAiLoading] = useState(false);
-
   const [botCount, setBotCount] = useState(3);
   const [timeLimit, setTimeLimit] = useState(15);
   const [localBots, setLocalBots] = useState([]);
@@ -292,6 +338,16 @@ export default function App() {
   const [countdown, setCountdown] = useState(null); // 3,2,1,0(GO) atau null
   const [raceReady, setRaceReady] = useState(false);
   const countdownStartedRef = useRef(false);
+  const seedingRef = useRef(false);
+
+  // ===== LAYAR SELAMAT SEBELUM PODIUM =====
+  const [showCongrats, setShowCongrats] = useState(false);
+  const [finalMs, setFinalMs] = useState(0);
+
+  // ===== PESAN SELAMAT DATANG =====
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [hideWelcome, setHideWelcome] = useState(false); // "jangan tampilkan lagi"
+  const welcomeShownRef = useRef(false);
 
   const moveRef = useRef({
     sprinting: false,
@@ -334,6 +390,15 @@ export default function App() {
     1,
     rankedPlayers.findIndex((p) => p.user_id === uid) + 1
   );
+
+  const congratsText =
+    myPosition === 1
+      ? 'Juara 1! Kucingmu paling cepat dan paling pintar! 🥇'
+      : myPosition === 2
+      ? 'Juara 2! Sedikit lagi jadi yang pertama! 🥈'
+      : myPosition === 3
+      ? 'Juara 3! Kamu masuk podium! 🥉'
+      : 'Kamu berhasil sampai garis finish! Terus berlatih ya! 💪';
 
   // Tinggi area balapan menyesuaikan jumlah lintasan supaya tidak ada kucing yang terpotong
   const sceneryMinHeight =
@@ -407,7 +472,7 @@ export default function App() {
   const closeTutorial = () => {
     setShowTutorial(false);
     setTargetRect(null);
-    localStorage.setItem('catdash_tutorial_seen', 'true');
+    if (uid) localStorage.setItem(`catdash_tutorial_seen_${uid}`, 'true');
     fx('click');
   };
 
@@ -438,12 +503,40 @@ export default function App() {
     }
   };
 
+  // Muat preferensi "jangan tampilkan lagi" milik user yang sedang login
   useEffect(() => {
-    const hasSeenTutorial = localStorage.getItem('catdash_tutorial_seen');
-    if (!hasSeenTutorial && screen === 'home' && uid) {
-      startTutorial();
+    if (!uid) {
+      setHideWelcome(false);
+      return;
     }
+    setHideWelcome(localStorage.getItem(`catdash_hide_welcome_${uid}`) === 'true');
+  }, [uid]);
+
+  // Tampilkan pesan selamat datang SEKALI setiap aplikasi dibuka / user login
+  useEffect(() => {
+    if (!uid) {
+      welcomeShownRef.current = false;
+      setShowWelcome(false);
+      return;
+    }
+    if (screen !== 'home' || welcomeShownRef.current) return;
+    welcomeShownRef.current = true;
+    if (localStorage.getItem(`catdash_hide_welcome_${uid}`) === 'true') return;
+    setShowWelcome(true);
   }, [screen, uid]);
+
+  const toggleHideWelcome = (hide) => {
+    setHideWelcome(hide);
+    if (!uid) return;
+    if (hide) localStorage.setItem(`catdash_hide_welcome_${uid}`, 'true');
+    else localStorage.removeItem(`catdash_hide_welcome_${uid}`);
+  };
+
+  const closeWelcome = (withTutorial) => {
+    setShowWelcome(false);
+    fx('click');
+    if (withTutorial) startTutorial();
+  };
 
   // ===== BGM & GAMEPLAY =====
   useEffect(() => {
@@ -513,14 +606,46 @@ export default function App() {
 
   const refreshQuizzes = useCallback(async () => {
     if (!supabase || !uid) return;
-    const { data, error: e } = await supabase
-      .from('quizzes')
-      .select('id,title')
-      .eq('owner_id', uid)
-      .order('created_at', { ascending: false });
-    if (e) throw e;
-    setQuizzes(data || []);
+    const fetchList = async () => {
+      const { data, error: e } = await supabase
+        .from('quizzes')
+        .select('id,title')
+        .eq('owner_id', uid)
+        .order('created_at', { ascending: false });
+      if (e) throw e;
+      return data || [];
+    };
+    let list = await fetchList();
+
+    // User yang belum punya kuis otomatis dibuatkan 1 kuis simulasi (15 soal mudah)
+    if (list.length === 0 && !seedingRef.current) {
+      seedingRef.current = true;
+      try {
+        await seedSampleQuiz(uid);
+        list = await fetchList();
+      } catch (err) {
+        setError(
+          'Gagal membuat kuis simulasi otomatis: ' +
+            msg(err) +
+            ' (kemungkinan izin tabel di Supabase belum mengizinkan)'
+        );
+      } finally {
+        seedingRef.current = false;
+      }
+    }
+
+    setQuizzes(list);
+    setSelectedQuiz((prev) => prev || list[0]?.id || '');
   }, [uid]);
+
+  const createSampleQuiz = () =>
+    run(async () => {
+      const id = await seedSampleQuiz(uid);
+      await refreshQuizzes();
+      setSelectedQuiz(id);
+      setFeedback('Kuis simulasi berhasil dibuat!');
+      fx('correct');
+    });
 
   const refreshRoom = useCallback(async (id) => {
     if (!supabase || !id) return;
@@ -673,8 +798,10 @@ export default function App() {
     if (room?.status === 'racing' && me?.finished_at) {
       setShowResults(true);
       if (!finishedRef.current) {
-        fx('finish');
         finishedRef.current = true;
+        setFinalMs(raceStartTime ? Date.now() - raceStartTime : elapsedMs);
+        setShowCongrats(true); // selamat dulu, baru podium
+        fx('finish');
       }
     }
   }, [me?.finished_at, room?.status, soundOn]);
@@ -952,76 +1079,6 @@ export default function App() {
     fx('click');
   };
 
-  const generateAIQuiz = async () => {
-    if (!aiTopic.trim()) return setError('Ketik topik kuis terlebih dahulu.');
-    setAiLoading(true);
-    setError('');
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 50000);
-    try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-quiz`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-          signal: controller.signal,
-          body: JSON.stringify({
-            topic: aiTopic,
-            level: aiLevel,
-            count: aiCount,
-          }),
-        }
-      );
-      clearTimeout(timeoutId);
-      const responseText = await response.text();
-      if (!response.ok)
-        throw new Error(
-          responseText || `HTTP error! status: ${response.status}`
-        );
-      const data = JSON.parse(responseText);
-      if (data && data.questions && data.questions.length > 0) {
-        const formattedQuestions = data.questions.map((q) => ({
-          ...blank(),
-          prompt: q.prompt,
-          type: 'pg',
-          options: q.options,
-          correct_index: q.correct_index,
-        }));
-        setQuestions(formattedQuestions);
-        if (!title) setTitle(`Kuis AI: ${aiTopic} (${aiLevel})`);
-        fx('correct');
-        setFeedback('Kuis AI berhasil dibuat!');
-      } else {
-        throw new Error('AI tidak mengembalikan soal.');
-      }
-    } catch (err) {
-      const rawErr = String(err.message || err);
-      let friendlyMsg =
-        'Terjadi kesalahan sistem saat membuat soal. Coba lagi.';
-      if (
-        rawErr.includes('429') ||
-        rawErr.includes('quota') ||
-        rawErr.includes('RESOURCE_EXHAUSTED')
-      )
-        friendlyMsg =
-          'Wah, kuota AI hari ini sudah habis. Coba lagi besok atau gunakan kunci baru.';
-      else if (rawErr.includes('404') || rawErr.includes('not found'))
-        friendlyMsg =
-          'Sistem AI sedang sibuk atau diperbarui. Coba beberapa saat lagi.';
-      else if (err.name === 'AbortError' || rawErr.includes('aborted'))
-        friendlyMsg =
-          'Koneksi lambat atau server AI terlalu lama merespons. Coba klik lagi.';
-      else if (rawErr.includes('Failed to fetch'))
-        friendlyMsg = 'Gagal terhubung ke server. Periksa koneksi internetmu.';
-      setError(friendlyMsg);
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
   const saveQuiz = () =>
     run(async () => {
       if (!title.trim()) throw Error('Isi judul kuis.');
@@ -1193,6 +1250,22 @@ export default function App() {
     answer(shortAnswerInput.trim());
   };
 
+  const deleteQuestion = (i) => {
+    const q = questions[i];
+    if (!q) return;
+    const hasContent =
+      q.prompt.trim() || q.correct_text.trim() || q.options.some((o) => o.trim());
+    if (hasContent && !window.confirm(`Hapus soal nomor ${i + 1}?`)) return;
+    if (questions.length === 1) {
+      setQuestions([blank()]); // soal terakhir dikosongkan, bukan dihapus
+      setFeedback('Soal dikosongkan.');
+    } else {
+      setQuestions((v) => v.filter((_, j) => j !== i));
+      setFeedback(`Soal nomor ${i + 1} dihapus.`);
+    }
+    fx('click');
+  };
+
   const setQ = (i, field, value, option) =>
     setQuestions((old) =>
       old.map((q, j) => {
@@ -1263,6 +1336,8 @@ export default function App() {
     setCountdown(null);
     setRaceReady(false);
     countdownStartedRef.current = false;
+    setShowCongrats(false);
+    setFinalMs(0);
   };
 
   if (!configured)
@@ -1564,6 +1639,15 @@ export default function App() {
             >
               {busy ? 'MENYIMPAN...' : '💾 SIMPAN NAMA'}
             </button>
+
+            <label className="checkRow">
+              <input
+                type="checkbox"
+                checked={!hideWelcome}
+                onChange={(e) => toggleHideWelcome(!e.target.checked)}
+              />
+              <span>Tampilkan pesan selamat datang saat membuka aplikasi</span>
+            </label>
           </div>
 
           <div className="actions" style={{ marginTop: '30px' }}>
@@ -1591,9 +1675,9 @@ export default function App() {
         <section className="panel center hero">
           <h1>CAT DASH</h1>
           <p className="hero-desc">
-            Siap membuktikan siapa raja jalanan (atau jalur lari kucing) yang
-            paling cerdas dan gesit? Cat Dash adalah game balap kucing
-            multiplayer yang menggabungkan kecepatan jari dan ketajaman otak!
+            — 🐾 Siap membuktikan siapa raja jalur lari kucing yang cerdas dan gesit? — 
+            Cat Dash adalah game balap kucing multiplayer yang
+            menggabungkan kecepatan jari dan ketajaman otak! ✨
           </p>
           <div className="heroCats">
             {CATS.map((c) => (
@@ -1637,72 +1721,6 @@ export default function App() {
       {screen === 'create' && (
         <section className="panel">
           <h2>✎ Buat Kuis Sendiri</h2>
-          <div
-            className="questionEditor"
-            style={{
-              background: 'var(--bg-almond)',
-              borderColor: 'var(--pink-soft)',
-            }}
-          >
-            <h3
-              style={{
-                marginTop: 0,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}
-            >
-              ✨ Buat Kuis Otomatis dengan AI
-            </h3>
-            <div
-              style={{
-                display: 'flex',
-                gap: '10px',
-                flexWrap: 'wrap',
-                marginTop: '10px',
-              }}
-            >
-              <input
-                style={{ flex: 2, minWidth: '200px' }}
-                value={aiTopic}
-                onChange={(e) => setAiTopic(e.target.value)}
-                placeholder="Topik (misal: Tata Surya)"
-              />
-              <select
-                style={{ flex: 1, minWidth: '120px' }}
-                value={aiLevel}
-                onChange={(e) => setAiLevel(e.target.value)}
-              >
-                <option value="Mudah">Mudah</option>
-                <option value="Sedang">Sedang</option>
-                <option value="Sulit">Sulit</option>
-              </select>
-              <select
-                style={{ flex: 1, minWidth: '100px' }}
-                value={aiCount}
-                onChange={(e) => setAiCount(Number(e.target.value))}
-              >
-                <option value={3}>3 Soal</option>
-                <option value={5}>5 Soal</option>
-                <option value={10}>10 Soal</option>
-              </select>
-              <button
-                id="tour-btn-ai"
-                onClick={generateAIQuiz}
-                disabled={aiLoading}
-                style={{
-                  flex: 1,
-                  background:
-                    'linear-gradient(180deg, #a3d9a5, var(--green-moss))',
-                  color: '#fff',
-                  boxShadow: '0 4px 0 #2d3f22',
-                }}
-              >
-                {aiLoading ? 'MEMBUAT...' : '✨ GENERATE'}
-              </button>
-            </div>
-          </div>
-
           <label>Judul kuis</label>
           <input
             id="tour-input-judul"
@@ -1713,12 +1731,12 @@ export default function App() {
           />
 
           {questions.map((q, i) => (
-            <div className="questionEditor" key={i}>
+            <div className="questionEditor" key={q._key}>
               <div className="between">
                 <b>SOAL {i + 1}</b>
                 <div>
                   <select
-                    id="tour-pilih-tipe"
+                    id={i === 0 ? 'tour-pilih-tipe' : undefined}
                     value={q.type}
                     onChange={(e) => setQ(i, 'type', e.target.value)}
                     style={{
@@ -1732,18 +1750,17 @@ export default function App() {
                     <option value="isian">Isian Singkat</option>
                   </select>
                   <button
+                    type="button"
+                    id={i === 0 ? 'tour-btn-hapus-soal' : undefined}
                     className="ghost danger"
-                    disabled={questions.length === 1}
-                    onClick={() =>
-                      setQuestions((v) => v.filter((_, j) => j !== i))
-                    }
+                    onClick={() => deleteQuestion(i)}
                   >
-                    HAPUS
+                    🗑 HAPUS
                   </button>
                 </div>
               </div>
               <textarea
-                id="tour-input-soal"
+                id={i === 0 ? 'tour-input-soal' : undefined}
                 rows={2}
                 value={q.prompt}
                 onChange={(e) => setQ(i, 'prompt', e.target.value)}
@@ -1806,11 +1823,12 @@ export default function App() {
 
           <div className="actions">
             <button
+              id="tour-btn-tambah-soal"
               className="secondary"
               disabled={questions.length >= 50}
               onClick={() => setQuestions((v) => [...v, blank()])}
             >
-              + TAMBAH SOAL MANUAL
+              + TAMBAH SOAL
             </button>
             <button
               id="tour-btn-simpan"
@@ -1876,16 +1894,25 @@ export default function App() {
                 ))}
               </select>
               {quizzes.length === 0 && (
-                <p>
-                  Belum punya kuis.{' '}
+                                <div>
+                  <p>
+                    Belum punya kuis.{' '}
+                    <button
+                      className="linkBtn"
+                      onClick={() => setScreen('create')}
+                    >
+                      Buat kuis dulu
+                    </button>
+                    .
+                  </p>
                   <button
-                    className="linkBtn"
-                    onClick={() => setScreen('create')}
+                    className="secondary"
+                    disabled={busy}
+                    onClick={createSampleQuiz}
                   >
-                    Buat kuis dulu
+                    🎮 BUAT KUIS SIMULASI (15 SOAL)
                   </button>
-                  .
-                </p>
+                </div>
               )}
 
               <label>Jumlah Bot (Lawan Sendiri)</label>
@@ -2014,6 +2041,40 @@ export default function App() {
                 <p className="muted">Menunggu host memulai...</p>
               )}
             </>
+          ) : showResults && showCongrats ? (
+            <div className="congrats-modal">
+              <div className="congrats-confetti">🎉 🎊 ✨ 🎊 🎉</div>
+              <h2 className="congrats-title">SELAMAT!</h2>
+              <div className="congrats-cat">
+                <Cat cat={me?.cat || cat} action="idle" size={110} />
+              </div>
+              <p className="congrats-desc">{congratsText}</p>
+              <div className="congrats-stats">
+                <div className="between">
+                  <span>🏁 Peringkat</span>
+                  <b>
+                    {myPosition} dari {rankedPlayers.length}
+                  </b>
+                </div>
+                <div className="between">
+                  <span>⏱ Waktu</span>
+                  <b>{formatTime(finalMs)}</b>
+                </div>
+                <div className="between">
+                  <span>✅ Jawaban benar</span>
+                  <b>{me?.correct_count || 0}</b>
+                </div>
+              </div>
+              <button
+                style={{ marginTop: '20px', width: '100%' }}
+                onClick={() => {
+                  setShowCongrats(false);
+                  fx('click');
+                }}
+              >
+                🏆 LIHAT PODIUM
+              </button>
+            </div>
           ) : showResults ? (
             <div className="results-container">
               <h2 className="podium-title">🏆 HASIL BALAPAN 🏆</h2>
@@ -2339,6 +2400,46 @@ export default function App() {
         </section>
       )}
 
+      {/* PESAN SELAMAT DATANG */}
+      {showWelcome && uid && screen === 'home' && !showTutorial && (
+        <div className="overlay">
+          <div className="instruction-modal welcome-modal">
+            <div className="welcomeCats">
+              {CATS.map((c) => (
+                <Cat key={c} cat={c} size={60} />
+              ))}
+            </div>
+            <h2>Selamat datang{name ? `, ${name}` : ''}! 🐾</h2>
+            <p className="welcome-desc">
+              {localStorage.getItem(`catdash_tutorial_seen_${uid}`)
+                ? 'Senang melihatmu lagi! Mau lihat panduan cara bermain Cat Dash lagi?'
+                : 'Sepertinya kamu baru di Cat Dash. Mau diajak keliling dulu supaya tidak bingung? Hanya sebentar kok!'}
+            </p>
+            <div className="actions" style={{ justifyContent: 'center' }}>
+              <button onClick={() => closeWelcome(true)}>
+                📖 YA, MULAI TUTORIAL
+              </button>
+              <button className="ghost" onClick={() => closeWelcome(false)}>
+                NANTI SAJA
+              </button>
+            </div>
+            <label className="checkRow">
+              <input
+                type="checkbox"
+                checked={hideWelcome}
+                onChange={(e) => toggleHideWelcome(e.target.checked)}
+              />
+              <span>
+                Jangan tampilkan lagi saat membuka aplikasi
+                <small style={{ display: 'block' }}>
+                  Bisa diaktifkan kembali di menu Profil.
+                </small>
+              </span>
+            </label>
+          </div>
+        </div>
+      )}
+
       {/* MODAL PANDUAN CARA MAIN */}
       {screen === 'room' && room?.status === 'lobby' && showHowTo && (
         <div className="overlay">
@@ -2466,7 +2567,7 @@ export default function App() {
           </div>
         )}
 
-      <footer>CAT DASH • Multiplayer Quiz Race • React + Supabase</footer>
+      <footer>CAT DASH • Multiplayer Quiz Race</footer>
     </main>
   );
 }
